@@ -1,8 +1,13 @@
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
+from collections import defaultdict
+import sys
+
 
 REQUIRED_FIELDS = {"timestamp", "ip", "username", "event"}
 
+
+#building parsing tool to help us get clean data from put sample log
 def parse_line(line):
     '''parse one JSONL line into a dict, or return if invalid.'''
     line = line.strip()  # strip() remove trailing newline and spaces
@@ -39,11 +44,11 @@ def load_logs(path):
 
         
 #building the detection 
-from collections import defaultdict
-from datetime import timedelta
 
 FAIL_THRESHOLD = 5
 WINDOW = timedelta(minutes=10)
+SEVERITY_ORDER ={"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
+
 
 def detect_brute_force(entries):
     alerts = []
@@ -86,14 +91,50 @@ def detect_brute_force(entries):
                 failures = []
                 alerted = False
 
+
     return alerts
 
+def detect_privilege_escalation(entries):
+    alerts = []
+    for e in entries:
+        if e["event"] == "privilege_escalation":
+            alerts.append({
+                "severity": "HIGH",
+                "rule": "privilege_escalation",
+                "ip": e["ip"],
+                "time": e["timestamp"],
+                "detail": f"{e['username']} escalated privileges",
+            })
+    return alerts
 
+def detect_access_denied(entries):
+    alerts = []
+    for e in entries:
+        if e["event"] == "access_denied":
+            alerts.append({
+                "severity": "MEDIUM",
+                "rule": "access_denied",
+                "ip": e["ip"],
+                "time": e["timestamp"],
+                "detail": f"{e['username']} was denied access",
+            })
+    return alerts
+
+def run_all_rules(entries):
+    alerts = []
+    alerts += detect_brute_force(entries)
+    alerts += detect_privilege_escalation(entries)
+    alerts += detect_access_denied(entries)
+    alerts.sort(key=lambda a: (SEVERITY_ORDER[a["severity"]], a["time"]))
+    return alerts
 
 if __name__ == "__main__":
-    entries, skipped = load_logs("sample_logs.jsonl")
+    if len(sys.argv) < 2:
+        print("Usage: python analyzer.py <logfile>")
+        sys.exit(1)
+
+    entries, skipped = load_logs(sys.argv[1])
     print(f"Loaded {len(entries)} events, skipped {skipped} bad lines\n")
 
-    for alert in detect_brute_force(entries):
-        print(f"[{alert['severity']}] {alert['rule']} | {alert['ip']} | "
-              f"{alert['time']} | {alert['detail']}")
+    for a in run_all_rules(entries):
+        print(f"[{a['severity']}] {a['rule']} | {a['ip']} | {a['time']} | {a['detail']}")
