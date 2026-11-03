@@ -5,7 +5,7 @@ REQUIRED_FIELDS = ["timestamp", "ip", "username", "event"}
 
 def parse_line(line):
     '''parse one JSONL line into a dict, or return if invalid.'''
-    line = line.strip()
+    line = line.strip()  # remove trailing newline and spaces
     if not line:
         return None
     try: 
